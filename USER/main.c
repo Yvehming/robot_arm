@@ -1,0 +1,90 @@
+#include "delay.h"
+#include "key.h"
+#include "sys.h"
+#include "usart.h"
+#include "timer.h"
+#include "arm.h"
+#include "led.h"
+#include "usart3.h"
+#include "io.h"
+#include "stdlib.h"
+#include "math.h"
+#include "string.h"
+
+
+
+int length,k;
+double x,y,z;
+int main(void)
+{
+    delay_init();	    	 //延时函数初始化
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2); 	 //设置NVIC中断分组2:2位抢占优先级，2位响应优先级
+    TIM3_Int_Init(7,719);//
+    TIM2_PWM_Init(999,1439);//20,60
+    uart_init(115200);	 //串口初始化为115200
+    usart3_init(9600);
+    IO_Init();
+    motor[0].step=motor[1].step=motor[2].step=0;
+    motor[0].stop=motor[1].stop=motor[2].stop=0;//启动标志，0动，1不动
+    TIM2->CCR2=20;  //舵机张开
+    arm_init();
+    while(1)
+    {
+        while(!motor[1].stop||!motor[2].stop||!motor[0].stop);
+        u3_printf("x=\r\n");
+        while(!(USART3_RX_STA&0X8000));
+        if(USART3_RX_STA&0X8000)
+        {   length=USART3_RX_STA&0X7FFF;	//得到数据长度
+            USART3_RX_BUF[length]='\0';	 	//加入结束符
+            {
+                x=atof((const char*)USART3_RX_BUF);
+            }
+            USART3_RX_STA=0;
+        }
+        u3_printf("x=%lf\r\n",x);
+        delay_ms(50);
+        u3_printf("y=\r\n");
+        while(!(USART3_RX_STA&0X8000));
+        if(USART3_RX_STA&0X8000)
+        {
+            length=USART3_RX_STA&0X7FFF;	//得到数据长度
+            USART3_RX_BUF[length]='\0';	 	//加入结束符
+            {
+                y=atof((const char*)USART3_RX_BUF);
+            }
+            USART3_RX_STA=0;
+        }
+        u3_printf("y=%lf\r\n",y);
+        delay_ms(50);
+        u3_printf("z=\r\n");
+        while(!(USART3_RX_STA&0X8000));
+        if(USART3_RX_STA&0X8000)
+        {
+            length=USART3_RX_STA&0X7FFF;	//得到数据长度
+            USART3_RX_BUF[length]='\0';	 	//加入结束符
+            {
+                z=atof((const char*)USART3_RX_BUF);
+            }
+            USART3_RX_STA=0;
+        }
+        u3_printf("z=%lf\r\n",z);
+        go_coordinate(x,y,z);
+        while(!motor[1].stop||!motor[2].stop||!motor[0].stop);
+        TIM2->CCR2=55;       //舵机合上
+        delay_ms(500);
+        u3_printf("Reset or not?\r\n");
+        while(!(USART3_RX_STA&0X8000));
+        if(USART3_RX_STA&0X8000)
+        {
+            length=USART3_RX_STA&0X7FFF;	//得到数据长度
+            USART3_RX_BUF[length]='\0';	 	//加入结束符
+            if(strcmp((const char*)USART3_RX_BUF,"yes")==0)
+            {
+                arm_reset();
+                TIM2->CCR2=20;
+            }
+            USART3_RX_STA=0;
+        }
+    }
+}
+
