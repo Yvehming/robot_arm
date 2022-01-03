@@ -86,6 +86,7 @@ u8 USART_RX_BUF[USART_REC_LEN];     //接收缓冲,最大USART_REC_LEN个字节.
 //bit13~0，	接收到的有效字节数目
 u16 USART_RX_STA=0;       //接收状态标记	  
   
+  
 void uart_init(u32 bound){
   //GPIO端口设置
   GPIO_InitTypeDef GPIO_InitStructure;
@@ -95,13 +96,13 @@ void uart_init(u32 bound){
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1|RCC_APB2Periph_GPIOA, ENABLE);	//使能USART1，GPIOA时钟
   
 	//USART1_TX   GPIOA.9
-  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9; //PA.9
+  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9; //PA.9  接rxd
   GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
   GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;	//复用推挽输出
   GPIO_Init(GPIOA, &GPIO_InitStructure);//初始化GPIOA.9
    
   //USART1_RX	  GPIOA.10初始化
-  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;//PA10
+  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;//PA10   接txd
   GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;//浮空输入
   GPIO_Init(GPIOA, &GPIO_InitStructure);//初始化GPIOA.10  
 
@@ -125,40 +126,35 @@ void uart_init(u32 bound){
   USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);//开启串口接受中断
   USART_Cmd(USART1, ENABLE);                    //使能串口1 
 
+
+	TIM7_Int_Init(99,7199);		//10ms中断
+	USART_RX_STA=0;		//清零
+	TIM_Cmd(TIM7,DISABLE);			//关闭定时器7                  //使能串口1 
+
 }
 
 void USART1_IRQHandler(void)                	//串口1中断服务程序
 	{
-	u8 Res;
-#if SYSTEM_SUPPORT_OS 		//如果SYSTEM_SUPPORT_OS为真，则需要支持OS.
-	OSIntEnter();    
-#endif
-	if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET)  //接收中断(接收到的数据必须是0x0d 0x0a结尾)
-		{
-		Res =USART_ReceiveData(USART1);	//读取接收到的数据
-		
-		if((USART_RX_STA&0x8000)==0)//接收未完成
+	u8 res;	      
+	if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET)//接收到数据
+	{	 
+		res =USART_ReceiveData(USART1);		 
+		if((USART_RX_STA&(1<<15))==0)//接收完的一批数据,还没有被处理,则不再接收其他数据
+		{ 
+			if(USART_RX_STA<USART_MAX_RECV_LEN)	//还可以接收数据
 			{
-			if(USART_RX_STA&0x4000)//接收到了0x0d
+				TIM_SetCounter(TIM7,0);//计数器清空          				//计数器清空
+				if(USART_RX_STA==0) 				//使能定时器7的中断 
 				{
-				if(Res!=0x0a)USART_RX_STA=0;//接收错误,重新开始
-				else USART_RX_STA|=0x8000;	//接收完成了 
+					TIM_Cmd(TIM7,ENABLE);//使能定时器7
 				}
-			else //还没收到0X0D
-				{	
-				if(Res==0x0d)USART_RX_STA|=0x4000;
-				else
-					{
-					USART_RX_BUF[USART_RX_STA&0X3FFF]=Res ;
-					USART_RX_STA++;
-					if(USART_RX_STA>(USART_REC_LEN-1))USART_RX_STA=0;//接收数据错误,重新开始接收	  
-					}		 
-				}
-			}   		 
-     } 
-#if SYSTEM_SUPPORT_OS 	//如果SYSTEM_SUPPORT_OS为真，则需要支持OS.
-	OSIntExit();  											 
-#endif
+				USART_RX_BUF[USART_RX_STA++]=res;	//记录接收到的值	 
+			}else 
+			{
+				USART_RX_STA|=1<<15;				//强制标记接收完成
+			} 
+		}
+	}  
 } 
 #endif	
 
